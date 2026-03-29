@@ -1,0 +1,46 @@
+[package]
+name = "tiangong-lang"
+version = "0.1.0"
+edition = "2024"
+description = "天工开物编程语言 - 基于文言文与繁体中文的高级编程语言"
+authors = ["天工语开发团队"]
+license = "MIT"
+repository = "https://github.com/tiangong-lang/tiangong-lang"
+readme = "README.md"
+
+[[bin]]
+name = "天工語"
+path = "src/main.rs"
+
+[dependencies]
+logos = "0.14"
+nom = "7.1"
+thiserror = "1.0"
+anyhow = "1.0"
+clap = { version = "4.4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
+regex = "1.10"
+unicode-normalization = "0.1"
+unicode-segmentation = "1.11"
+unicode-width = "0.1"
+lazy_static = "1.4"
+rayon = "1.8"
+dashmap = "5.5"
+indexmap = "2.2"
+smallvec = "1.13"
+parking_lot = "0.12"
+
+[dev-dependencies]
+criterion = "0.5"
+pretty_assertions = "1.4"
+insta = "1.38"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[workspace]
+members = ["."]
