@@ -373,6 +373,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_source_slice(&self, span: Span) -> &'a str {
         // 确保 start 和 end 是字符边界
         let safe_start = self.source.char_indices()
