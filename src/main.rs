@@ -361,7 +361,3 @@ fn show_tokens(file_path: &str) {
     }
 }
 
-// 辅助函数，因为println!在Windows上可能有问题
-fn println(text: &str) {
-    println!("{}", text);
-}
