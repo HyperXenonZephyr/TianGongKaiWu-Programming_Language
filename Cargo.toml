@@ -5,7 +5,7 @@ edition = "2024"
 description = "天工开物编程语言 - 基于文言文与繁体中文的高级编程语言"
 authors = ["天工语开发团队"]
 license = "GPL-3.0"
-repository = "https://github.com/tiangong-lang/tiangong-lang"
+repository = "https://github.com/HyperXenonZephyr/TianGongKaiWu-Programming_Language"
 readme = "README.md"
 
 [[bin]]
