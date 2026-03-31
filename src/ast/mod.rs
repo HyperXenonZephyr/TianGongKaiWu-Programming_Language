@@ -311,6 +311,7 @@ impl Expression {
 }
 
 impl Statement {
+    #[allow(dead_code)]
     pub fn span(&self) -> Span {
         match self {
             Statement::VariableDecl(decl) => decl.span,
