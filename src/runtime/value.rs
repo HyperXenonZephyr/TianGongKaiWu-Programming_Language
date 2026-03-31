@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Number(f64),
     Integer(i64),
@@ -13,6 +13,24 @@ pub enum Value {
     Dict(HashMap<String, Value>),
     Function(Rc<Function>),
     NativeFunction(NativeFunction),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Number(a), Value::Number(b)) => a == b,
+            (Value::Integer(a), Value::Integer(b)) => a == b,
+            (Value::String(a), Value::String(b)) => a == b,
+            (Value::Boolean(a), Value::Boolean(b)) => a == b,
+            (Value::Null, Value::Null) => true,
+            (Value::Array(a), Value::Array(b)) => a == b,
+            (Value::Dict(a), Value::Dict(b)) => a == b,
+            (Value::Function(a), Value::Function(b)) => Rc::ptr_eq(a, b),
+            // NativeFunction 不比较函数指针，只比较类型
+            (Value::NativeFunction(_), Value::NativeFunction(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +82,7 @@ impl Environment {
 }
 
 impl Value {
+    #[allow(dead_code)]
     pub fn type_name(&self) -> &'static str {
         match self {
             Value::Number(_) => "數值",
