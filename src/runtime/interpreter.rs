@@ -192,7 +192,7 @@ impl Interpreter {
     }
 
     fn execute_block(&mut self, statements: &[Statement]) -> Result<Value, String> {
-        let mut env = Environment::new_with_parent(self.environment.clone());
+        let env = Environment::new_with_parent(self.environment.clone());
         let mut interpreter = Interpreter {
             environment: env,
         };
@@ -580,7 +580,6 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::*;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
 
