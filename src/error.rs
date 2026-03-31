@@ -92,6 +92,36 @@ impl Error {
         }
     }
     
+    /// 获取带源代码上下文的错误消息
+    pub fn message_with_context(&self, source: &str) -> String {
+        let base_msg = self.message();
+        if let Some(span) = self.span() {
+            if span.start < source.len() && span.end <= source.len() {
+                let line_start = source[..span.start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                let line_end = source[span.end..].find('\n').map(|i| span.end + i).unwrap_or(source.len());
+                let line = &source[line_start..line_end];
+                let column = span.start - line_start + 1;
+                let line_num = source[..span.start].chars().filter(|&c| c == '\n').count() + 1;
+                
+                let pointer = " ".repeat(column - 1) + "^";
+                return format!("{}\n在第 {} 行，第 {} 列:\n{}\n{}", base_msg, line_num, column, line, pointer);
+            }
+        }
+        base_msg
+    }
+    
+    /// 获取带源代码片段上下文的错误消息（使用Lexer的get_source_slice）
+    pub fn message_with_source_slice(&self, lexer: &crate::lexer::Lexer) -> String {
+        let base_msg = self.message();
+        if let Some(span) = self.span() {
+            let source_slice = lexer.get_source_slice(span);
+            if !source_slice.is_empty() {
+                return format!("{}: {}", base_msg, source_slice);
+            }
+        }
+        base_msg
+    }
+    
     /// 获取错误位置
     pub fn span(&self) -> Option<Span> {
         match self {
