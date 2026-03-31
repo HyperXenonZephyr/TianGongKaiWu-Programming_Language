@@ -31,7 +31,7 @@ The language design follows the philosophy of "Heavenly Craftsmanship, Surpassin
 ### 從源碼構建 | Build from Source
 ```bash
 # 克隆倉庫 | Clone repository
-git clone <repository-url>
+git clone https://github.com/HyperXenonZephyr/TianGongKaiWu-Programming_Language.git
 cd tiangong-lang
 
 # 構建項目 | Build project
@@ -221,7 +221,7 @@ Download the corresponding platform binary from the release page and add it to t
 
 ## 許可證 | License
 
-本項目採用MIT許可證。詳見 [LICENSE](LICENSE) 文件。  
+本項目採用GPL-3.0許可證。詳見 [LICENSE](LICENSE) 文件。  
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## 致謝 | Acknowledgments

@@ -135,8 +135,7 @@ pub enum Token {
     Semicolon,
     #[token(".")]
     Dot,
-    #[regex(r"注：.*", priority = 5)]
-    Comment,
+
 
     // 字面量
     #[regex(r"[零一二三四五六七八九十百千萬億兆]+", |lex| lex.slice().to_string(), priority = 3)]
@@ -172,6 +171,7 @@ pub enum Token {
     // 空白字符
     #[regex(r"[ \t\n\r]+", logos::skip)]
     #[regex(r"//[^\n]*", logos::skip, priority = 4)]
+    #[regex(r"注[:：][^\n]*", logos::skip, priority = 4)]
     Whitespace,
 
     // 错误
@@ -243,7 +243,6 @@ impl fmt::Display for Token {
             Token::Colon => write!(f, ":"),
             Token::Semicolon => write!(f, ";"),
             Token::Dot => write!(f, "."),
-            Token::Comment => write!(f, "//"),
             Token::Number(n) => write!(f, "數字({})", n),
             Token::StringLiteral(s) => write!(f, "字符串「{}」", s),
             Token::Identifier(id) => write!(f, "標識符({})", id),
@@ -301,16 +300,6 @@ impl<'a> Lexer<'a> {
         while let Some(result) = self.inner.next() {
             match result {
                 Ok(token) => {
-                    // 跳过注释
-                    if token == Token::Comment {
-                        let span = self.inner.span();
-                        let start = span.start;
-                        let end = span.end;
-                        // 更新位置但不添加到tokens
-                        self.update_position(start, end);
-                        continue;
-                    }
-                    
                     let span = self.inner.span();
                     let start = span.start;
                     let end = span.end;
