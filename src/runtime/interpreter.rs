@@ -2,6 +2,11 @@ use crate::ast::*;
 use crate::runtime::value::{Environment, Value};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::cell::RefCell;
+
+thread_local! {
+    static RETURN_VALUE: RefCell<Option<Value>> = RefCell::new(None);
+}
 
 pub struct Interpreter {
     pub environment: Environment,
@@ -26,23 +31,9 @@ impl Interpreter {
             match self.execute_statement(statement) {
                 Ok(value) => last_value = value,
                 Err(e) => {
-                    // 检查是否是返回语句
-                    if e.starts_with("return:") {
-                        let value_str = &e[7..];
-                        if value_str == "null" {
-                            return Ok(Value::Null);
-                        } else {
-                            // 尝试解析Debug格式的值
-                            // 简化处理：对于整数"Integer(1)"，提取1
-                            if value_str.starts_with("Integer(") && value_str.ends_with(")") {
-                                let num_str = &value_str[8..value_str.len()-1];
-                                if let Ok(num) = num_str.parse::<i64>() {
-                                    return Ok(Value::Integer(num));
-                                }
-                            }
-                            // 默认返回Null
-                            return Ok(Value::Null);
-                        }
+                    if e == "__return__" {
+                        let val = RETURN_VALUE.with(|rv| rv.borrow_mut().take());
+                        return Ok(val.unwrap_or(Value::Null));
                     } else {
                         return Err(e);
                     }
@@ -66,6 +57,7 @@ impl Interpreter {
             Statement::FunctionDecl(decl) => self.execute_function_decl(decl),
             Statement::TryCatch(stmt) => self.execute_try_catch(stmt),
             Statement::PrintStatement(stmt) => self.execute_print_statement(stmt),
+            Statement::ForEachStatement(stmt) => self.execute_foreach_statement(stmt),
             Statement::ImportStatement(_) => Ok(Value::Null), // 暂不实现
             Statement::ExportStatement(_) => Ok(Value::Null), // 暂不实现
         }
@@ -149,12 +141,15 @@ impl Interpreter {
     }
 
     fn execute_return_statement(&mut self, stmt: &ReturnStatement) -> Result<Value, String> {
-        if let Some(expr) = &stmt.value {
-            let value = self.evaluate_expression(expr)?;
-            Err(format!("return:{:?}", value))
+        let value = if let Some(expr) = &stmt.value {
+            self.evaluate_expression(expr)?
         } else {
-            Err("return:null".to_string())
-        }
+            Value::Null
+        };
+        RETURN_VALUE.with(|rv| {
+            *rv.borrow_mut() = Some(value);
+        });
+        Err("__return__".to_string())
     }
 
     fn execute_function_decl(&mut self, decl: &FunctionDecl) -> Result<Value, String> {
@@ -189,6 +184,38 @@ impl Interpreter {
         }
         println!();
         Ok(Value::Null)
+    }
+
+    fn execute_foreach_statement(&mut self, stmt: &ForEachStatement) -> Result<Value, String> {
+        let iterable = self.evaluate_expression(&stmt.iterable)?;
+
+        match iterable {
+            Value::Array(arr) => {
+                let mut last = Value::Null;
+                for item in arr {
+                    self.environment.define(stmt.variable.clone(), item);
+                    match self.execute_block(&stmt.body) {
+                        Ok(v) => last = v,
+                        Err(e) if e == "break" => break,
+                        Err(e) => return Err(e),
+                    }
+                }
+                Ok(last)
+            }
+            Value::String(s) => {
+                let mut last = Value::Null;
+                for ch in s.chars() {
+                    self.environment.define(stmt.variable.clone(), Value::String(ch.to_string()));
+                    match self.execute_block(&stmt.body) {
+                        Ok(v) => last = v,
+                        Err(e) if e == "break" => break,
+                        Err(e) => return Err(e),
+                    }
+                }
+                Ok(last)
+            }
+            _ => Err("遍歷對象必須是數組或字符串".to_string()),
+        }
     }
 
     fn execute_block(&mut self, statements: &[Statement]) -> Result<Value, String> {
@@ -236,9 +263,7 @@ impl Interpreter {
                         Ok(Value::Integer(n.parse::<i64>().map_err(|e| e.to_string())?))
                     }
                 } else {
-                    // 中文数字转换（简化版）
-                    let num = Self::chinese_number_to_arabic(n);
-                    Ok(Value::Integer(num))
+                    Ok(Self::chinese_to_number(n))
                 }
             }
             Literal::String(s) => Ok(Value::String(s.clone())),
@@ -247,7 +272,38 @@ impl Interpreter {
         }
     }
 
-    fn chinese_number_to_arabic(chinese: &str) -> i64 {
+    /// 中文数字转换（支持「點」小数）
+    fn chinese_to_number(chinese: &str) -> Value {
+        if chinese.contains('點') {
+            let parts: Vec<&str> = chinese.splitn(2, '點').collect();
+            let integer_part = Self::chinese_integer(parts[0]) as f64;
+            let decimal_str = parts[1];
+            let mut decimal_part = 0.0;
+            let mut place = 0.1;
+            for ch in decimal_str.chars() {
+                let digit = match ch {
+                    '零' => 0.0,
+                    '一' => 1.0,
+                    '二' => 2.0,
+                    '三' => 3.0,
+                    '四' => 4.0,
+                    '五' => 5.0,
+                    '六' => 6.0,
+                    '七' => 7.0,
+                    '八' => 8.0,
+                    '九' => 9.0,
+                    _ => continue,
+                };
+                decimal_part += digit * place;
+                place *= 0.1;
+            }
+            Value::Number(integer_part + decimal_part)
+        } else {
+            Value::Integer(Self::chinese_integer(chinese))
+        }
+    }
+
+    fn chinese_integer(chinese: &str) -> i64 {
         let mut result = 0;
         let mut temp = 0;
 
@@ -339,6 +395,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => (a - b).abs() < f64::EPSILON,
             (Value::Integer(a), Value::Integer(b)) => a == b,
+            (Value::Integer(a), Value::Number(b)) => ((*a as f64) - b).abs() < f64::EPSILON,
+            (Value::Number(a), Value::Integer(b)) => (a - (*b as f64)).abs() < f64::EPSILON,
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Null, Value::Null) => true,
@@ -350,6 +408,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a + b)),
+            (Value::Integer(a), Value::Number(b)) => Ok(Value::Number(*a as f64 + b)),
+            (Value::Number(a), Value::Integer(b)) => Ok(Value::Number(a + *b as f64)),
             (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
             (Value::String(a), b) => Ok(Value::String(format!("{}{}", a, b.to_string()))),
             (a, Value::String(b)) => Ok(Value::String(format!("{}{}", a.to_string(), b))),
@@ -361,6 +421,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)),
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a - b)),
+            (Value::Integer(a), Value::Number(b)) => Ok(Value::Number(*a as f64 - b)),
+            (Value::Number(a), Value::Integer(b)) => Ok(Value::Number(a - *b as f64)),
             _ => Err("減法運算類型錯誤".to_string()),
         }
     }
@@ -369,6 +431,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)),
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a * b)),
+            (Value::Integer(a), Value::Number(b)) => Ok(Value::Number(*a as f64 * b)),
+            (Value::Number(a), Value::Integer(b)) => Ok(Value::Number(a * *b as f64)),
             _ => Err("乘法運算類型錯誤".to_string()),
         }
     }
@@ -376,18 +440,20 @@ impl Interpreter {
     fn binary_div(&self, left: &Value, right: &Value) -> Result<Value, String> {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => {
-                if *b == 0.0 {
-                    Err("除數不能為零".to_string())
-                } else {
-                    Ok(Value::Number(a / b))
-                }
+                if *b == 0.0 { Err("除數不能為零".to_string()) }
+                else { Ok(Value::Number(a / b)) }
             }
             (Value::Integer(a), Value::Integer(b)) => {
-                if *b == 0 {
-                    Err("除數不能為零".to_string())
-                } else {
-                    Ok(Value::Integer(a / b))
-                }
+                if *b == 0 { Err("除數不能為零".to_string()) }
+                else { Ok(Value::Integer(a / b)) }
+            }
+            (Value::Integer(a), Value::Number(b)) => {
+                if *b == 0.0 { Err("除數不能為零".to_string()) }
+                else { Ok(Value::Number(*a as f64 / b)) }
+            }
+            (Value::Number(a), Value::Integer(b)) => {
+                if *b == 0 { Err("除數不能為零".to_string()) }
+                else { Ok(Value::Number(a / *b as f64)) }
             }
             _ => Err("除法運算類型錯誤".to_string()),
         }
@@ -396,18 +462,20 @@ impl Interpreter {
     fn binary_mod(&self, left: &Value, right: &Value) -> Result<Value, String> {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => {
-                if *b == 0.0 {
-                    Err("除數不能為零".to_string())
-                } else {
-                    Ok(Value::Number(a % b))
-                }
+                if *b == 0.0 { Err("除數不能為零".to_string()) }
+                else { Ok(Value::Number(a % b)) }
             }
             (Value::Integer(a), Value::Integer(b)) => {
-                if *b == 0 {
-                    Err("除數不能為零".to_string())
-                } else {
-                    Ok(Value::Integer(a % b))
-                }
+                if *b == 0 { Err("除數不能為零".to_string()) }
+                else { Ok(Value::Integer(a % b)) }
+            }
+            (Value::Integer(a), Value::Number(b)) => {
+                if *b == 0.0 { Err("除數不能為零".to_string()) }
+                else { Ok(Value::Number(*a as f64 % b)) }
+            }
+            (Value::Number(a), Value::Integer(b)) => {
+                if *b == 0 { Err("除數不能為零".to_string()) }
+                else { Ok(Value::Number(a % *b as f64)) }
             }
             _ => Err("取餘運算類型錯誤".to_string()),
         }
@@ -423,6 +491,8 @@ impl Interpreter {
                     Ok(Value::Integer(a.pow(*b as u32)))
                 }
             }
+            (Value::Integer(a), Value::Number(b)) => Ok(Value::Number((*a as f64).powf(*b))),
+            (Value::Number(a), Value::Integer(b)) => Ok(Value::Number(a.powf(*b as f64))),
             _ => Err("冪運算類型錯誤".to_string()),
         }
     }
@@ -431,6 +501,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a > b)),
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Boolean(a > b)),
+            (Value::Integer(a), Value::Number(b)) => Ok(Value::Boolean((*a as f64) > *b)),
+            (Value::Number(a), Value::Integer(b)) => Ok(Value::Boolean(*a > (*b as f64))),
             (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a > b)),
             _ => Err("比較運算類型錯誤".to_string()),
         }
@@ -440,6 +512,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a < b)),
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Boolean(a < b)),
+            (Value::Integer(a), Value::Number(b)) => Ok(Value::Boolean((*a as f64) < *b)),
+            (Value::Number(a), Value::Integer(b)) => Ok(Value::Boolean(*a < (*b as f64))),
             (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a < b)),
             _ => Err("比較運算類型錯誤".to_string()),
         }
@@ -449,6 +523,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a >= b)),
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Boolean(a >= b)),
+            (Value::Integer(a), Value::Number(b)) => Ok(Value::Boolean((*a as f64) >= *b)),
+            (Value::Number(a), Value::Integer(b)) => Ok(Value::Boolean(*a >= (*b as f64))),
             (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a >= b)),
             _ => Err("比較運算類型錯誤".to_string()),
         }
@@ -458,6 +534,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Boolean(a <= b)),
             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Boolean(a <= b)),
+            (Value::Integer(a), Value::Number(b)) => Ok(Value::Boolean((*a as f64) <= *b)),
+            (Value::Number(a), Value::Integer(b)) => Ok(Value::Boolean(*a <= (*b as f64))),
             (Value::String(a), Value::String(b)) => Ok(Value::Boolean(a <= b)),
             _ => Err("比較運算類型錯誤".to_string()),
         }

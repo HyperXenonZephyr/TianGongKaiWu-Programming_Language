@@ -288,14 +288,18 @@ fn show_history(history: &[String]) {
     }
 }
 
-fn show_environment(_interpreter: &Interpreter) {
+fn show_environment(interpreter: &Interpreter) {
     println!("╔══════════════════════════════════════════════════════════╗");
     println!("║                        環境變量                          ║");
     println!("╚══════════════════════════════════════════════════════════╝");
-    // 注意：这里需要访问interpreter的环境
-    // 由于Environment结构没有公开的方法来获取所有变量，这里只显示提示
-    println!("使用 變量名 曰 來查看變量值");
-    println!("或查看源代碼中的環境實現");
+    let vars = interpreter.environment.list_variables();
+    if vars.is_empty() {
+        println!("暫無自定義變量");
+    } else {
+        for (name, value) in vars {
+            println!("  {} = {}", name, value);
+        }
+    }
 }
 
 fn clear_screen() {

@@ -1,7 +1,7 @@
 [package]
 name = "tiangong-lang"
 version = "0.2.0"  # 升级版本号
-edition = "2024"
+edition = "2021"
 description = "天工开物编程语言 - 基于文言文与繁体中文的高级编程语言"
 authors = ["天工语开发团队"]
 license = "GPL-3.0"

@@ -104,6 +104,30 @@ impl Parser {
                     self.advance(); // 消耗Try
                     self.parse_try_catch()
                 }
+                Token::Call => {
+                    self.advance(); // 消耗Call（執）
+                    // 解析为表达式语句 - 下一个应为函数调用
+                    let expr = self.parse_expression()?;
+                    // 检查倒装输出：執 func() 曰
+                    if self.match_token(Token::Print) {
+                        let expr_span = expr.span();
+                        Ok(Statement::PrintStatement(PrintStatement {
+                            expressions: vec![expr],
+                            span: Span::new(
+                                expr_span.start,
+                                self.previous().span.end,
+                                expr_span.line,
+                                expr_span.column,
+                            ),
+                        }))
+                    } else {
+                        Ok(Statement::Expression(expr))
+                    }
+                }
+                Token::ForEach => {
+                    self.advance(); // 消耗ForEach（遍）
+                    self.parse_foreach_statement()
+                }
                 Token::Print => {
                     self.advance(); // 消耗Print
                     self.parse_print_statement()
@@ -248,9 +272,64 @@ impl Parser {
     fn parse_loop_statement(&mut self) -> Result<Statement, String> {
         let start_span = self.previous().span;
 
-        // 解析循环条件
-        let condition = self.parse_expression()?;
+        // 解析计数表达式或循环条件
+        let count_expr = self.parse_expression()?;
 
+        // 检查是否是计次循环：走 N 次 ... 終
+        if self.match_token(Token::Times) {
+            let counter = format!("__迴圈計數_{}", start_span.start);
+            let mut body_stmts = Vec::new();
+            while !self.check(Token::End) {
+                body_stmts.push(self.parse_statement()?);
+            }
+            self.consume(Token::End, "期望「終」")?;
+            let end_span = self.previous().span;
+
+            // 构造：设 counter 为 0; 循 counter < N { body; counter = counter + 1 }
+            let mut stmts = Vec::new();
+
+            // 设 counter 为 0
+            stmts.push(Statement::VariableDecl(VariableDecl {
+                name: counter.clone(),
+                value: Some(Expression::Literal(Literal::Number("0".to_string()))),
+                span: start_span,
+            }));
+
+            // 循 counter < N { body ... counter = counter + 1 }
+            let mut loop_body = body_stmts;
+            loop_body.push(Statement::Assignment(Assignment {
+                target: AssignmentTarget::Identifier(counter.clone()),
+                value: Expression::Binary(BinaryExpr {
+                    left: Box::new(Expression::Identifier(counter.clone(), start_span)),
+                    op: BinaryOp::Add,
+                    right: Box::new(Expression::Literal(Literal::Number("1".to_string()))),
+                    span: start_span,
+                }),
+                span: start_span,
+            }));
+
+            stmts.push(Statement::WhileStatement(WhileStatement {
+                condition: Expression::Binary(BinaryExpr {
+                    left: Box::new(Expression::Identifier(counter.clone(), start_span)),
+                    op: BinaryOp::Less,
+                    right: Box::new(count_expr),
+                    span: start_span,
+                }),
+                body: loop_body,
+                span: Span::new(start_span.start, end_span.end, start_span.line, start_span.column),
+            }));
+
+            // 包装为 if(true) 以返回单个语句
+            return Ok(Statement::IfStatement(IfStatement {
+                condition: Expression::Literal(Literal::Boolean(true)),
+                then_branch: stmts,
+                else_if_branches: vec![],
+                else_branch: None,
+                span: Span::new(start_span.start, end_span.end, start_span.line, start_span.column),
+            }));
+        }
+
+        // 否则按 while 循环处理：走 condition ... 終
         let mut body = Vec::new();
         while !self.check(Token::End) && !self.check(Token::Break) {
             body.push(self.parse_statement()?);
@@ -268,7 +347,7 @@ impl Parser {
 
         // 创建WhileStatement而不是LoopStatement
         Ok(Statement::WhileStatement(WhileStatement {
-            condition,
+            condition: count_expr,
             body,
             span: Span::new(start_span.start, end_span.end, start_span.line, start_span.column),
         }))
@@ -468,13 +547,23 @@ impl Parser {
         let start_span = self.previous().span;
 
         let mut expressions = Vec::new();
-        if !self.check(Token::Semicolon) && !self.is_at_end() {
+
+        // 支持函数调用风格：輸出(expr1, expr2, ...)
+        if self.check(Token::LParen) {
+            self.advance(); // consume (
+            if !self.check(Token::RParen) {
+                loop {
+                    expressions.push(self.parse_expression()?);
+                    if !self.match_token(Token::Comma) {
+                        break;
+                    }
+                }
+            }
+            self.consume(Token::RParen, "期望「)」")?;
+        } else if !self.check(Token::Semicolon) && !self.is_at_end() && !self.check_next_is_statement_end() {
             loop {
                 expressions.push(self.parse_expression()?);
-                
-                // 在文言文编程语言中，输出语句的参数用空格分隔
-                // 检查下一个token是否是表达式的一部分
-                // 如果不是表达式的一部分，则结束输出语句
+
                 if self.is_at_end() || self.check_next_is_statement_end() {
                     break;
                 }
@@ -577,6 +666,36 @@ impl Parser {
     }
 
 
+
+    fn parse_foreach_statement(&mut self) -> Result<Statement, String> {
+        let start_span = self.previous().span;
+
+        // 遍 變量 於 集合 ... 終
+        let var_name = if let Token::Identifier(name) = &self.consume(Token::Identifier("".to_string()), "期望變量名")?.token {
+            name.clone()
+        } else {
+            return Err("期望變量名".to_string());
+        };
+
+        // 消耗「於」
+        self.consume(Token::In, "期望「於」")?;
+
+        let iterable = self.parse_expression()?;
+
+        let mut body = Vec::new();
+        while !self.check(Token::End) {
+            body.push(self.parse_statement()?);
+        }
+        self.consume(Token::End, "期望「終」")?;
+        let end_span = self.previous().span;
+
+        Ok(Statement::ForEachStatement(ForEachStatement {
+            variable: var_name,
+            iterable,
+            body,
+            span: Span::new(start_span.start, end_span.end, start_span.line, start_span.column),
+        }))
+    }
 
     fn parse_expression(&mut self) -> Result<Expression, String> {
         self.parse_assignment()
@@ -889,6 +1008,11 @@ impl Parser {
                     // 通假字「才」作为标识符
                     return Ok(Expression::Identifier("才".to_string(), token.span));
                 }
+                Token::Call => {
+                    // 「執」在表达式中作为函数调用前缀，直接透传解析
+                    self.advance();
+                    return self.parse_call();
+                }
                 _ => {}
             }
         }
@@ -997,10 +1121,11 @@ impl Parser {
         // 对于文言文编程语言，我们主要检查是否是关键字或语句开始
         if let Some(token_info) = self.peek() {
             match &token_info.token {
-                Token::Set | Token::Var | Token::If | Token::Loop | Token::While | 
+                Token::Set | Token::Var | Token::If | Token::Loop | Token::While |
                 Token::Break | Token::Return | Token::Func | Token::Try | Token::Print |
                 Token::Import | Token::Export | Token::End | Token::Else | Token::ElseIf |
-                Token::Then | Token::Catch | Token::Except | Token::Finally => true,
+                Token::Then | Token::Catch | Token::Except | Token::Finally |
+                Token::Call | Token::ForEach => true,
                 _ => false,
             }
         } else {

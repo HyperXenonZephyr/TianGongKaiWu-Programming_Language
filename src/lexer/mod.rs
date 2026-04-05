@@ -6,6 +6,7 @@ use std::fmt;
 pub enum Token {
     // 关键字
     #[token("設")]
+    #[token("令")]
     Set,
     #[token("為")]
     Assign,
@@ -14,9 +15,9 @@ pub enum Token {
     #[token("若")]
     If,
     #[token("若否")]
-    Else,
+    ElseIf,    // 若否 = "if not" = else-if（带条件）
     #[token("若然則")]
-    ElseIf,
+    Else,      // 若然則 = "otherwise" = else（无条件）
     #[token("則")]
     Then,
     #[token("走")]
@@ -33,6 +34,12 @@ pub enum Token {
     Func,
     #[token("執")]
     Call,
+    #[token("次")]
+    Times,
+    #[token("遍")]
+    ForEach,
+    #[token("於")]
+    In,
     #[token("試")]
     Try,
     #[token("捕")]
@@ -57,6 +64,7 @@ pub enum Token {
     Delete,
     #[token("輸出")]
     #[token("曰")]
+    #[token("述")]
     Print,
     #[token("輸入")]
     Input,
@@ -138,7 +146,7 @@ pub enum Token {
 
 
     // 字面量
-    #[regex(r"[零一二三四五六七八九十百千萬億兆]+", |lex| lex.slice().to_string(), priority = 3)]
+    #[regex(r"[零一二三四五六七八九十百千萬億兆]+(?:點[零一二三四五六七八九]+)?", |lex| lex.slice().to_string(), priority = 3)]
     #[regex(r"[0-9]+(?:\.[0-9]+)?", |lex| lex.slice().to_string(), priority = 3)]
     Number(String),
 
@@ -171,6 +179,7 @@ pub enum Token {
     // 空白字符
     #[regex(r"[ \t\n\r]+", logos::skip)]
     #[regex(r"//[^\n]*", logos::skip, priority = 4)]
+    #[regex(r"#[^\n]*", logos::skip, priority = 4)]
     #[regex(r"注[:：][^\n]*", logos::skip, priority = 4)]
     Whitespace,
 
@@ -185,8 +194,8 @@ impl fmt::Display for Token {
             Token::Assign => write!(f, "曰"),
             Token::Var => write!(f, "才"),
             Token::If => write!(f, "若"),
-            Token::Else => write!(f, "若否"),
-            Token::ElseIf => write!(f, "若然則"),
+            Token::ElseIf => write!(f, "若否"),
+            Token::Else => write!(f, "若然則"),
             Token::Then => write!(f, "則"),
             Token::Loop => write!(f, "走"),
             Token::While => write!(f, "循"),
@@ -195,6 +204,9 @@ impl fmt::Display for Token {
             Token::Yield => write!(f, "歸"),
             Token::Func => write!(f, "謂"),
             Token::Call => write!(f, "執"),
+            Token::Times => write!(f, "次"),
+            Token::ForEach => write!(f, "遍"),
+            Token::In => write!(f, "於"),
             Token::Try => write!(f, "試"),
             Token::Catch => write!(f, "捕"),
             Token::Except => write!(f, "說"),

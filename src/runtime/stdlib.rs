@@ -13,6 +13,8 @@ impl StandardLibrary {
         Self::add_dict_functions(env);
         Self::add_type_functions(env);
         Self::add_utility_functions(env);
+        Self::add_conversion_functions(env);
+        Self::add_random_functions(env);
     }
 
     /// 添加输入输出函数
@@ -465,6 +467,89 @@ impl StandardLibrary {
                     return Err("期望一個參數".to_string());
                 }
                 Ok(Value::Boolean(matches!(args[0], Value::Null)))
+            }),
+        );
+    }
+
+    /// 添加类型转换函数
+    fn add_conversion_functions(env: &mut Environment) {
+        env.define(
+            "轉整數".to_string(),
+            Value::NativeFunction(|args| {
+                if args.len() != 1 {
+                    return Err("期望一個參數".to_string());
+                }
+                match &args[0] {
+                    Value::Number(n) => Ok(Value::Integer(*n as i64)),
+                    Value::Integer(i) => Ok(Value::Integer(*i)),
+                    Value::String(s) => s.parse::<i64>()
+                        .map(Value::Integer)
+                        .map_err(|_| format!("無法將「{}」轉換為整數", s)),
+                    Value::Boolean(b) => Ok(Value::Integer(if *b { 1 } else { 0 })),
+                    _ => Err("無法轉換為整數".to_string()),
+                }
+            }),
+        );
+
+        env.define(
+            "轉數字".to_string(),
+            Value::NativeFunction(|args| {
+                if args.len() != 1 {
+                    return Err("期望一個參數".to_string());
+                }
+                match &args[0] {
+                    Value::Number(n) => Ok(Value::Number(*n)),
+                    Value::Integer(i) => Ok(Value::Number(*i as f64)),
+                    Value::String(s) => s.parse::<f64>()
+                        .map(Value::Number)
+                        .map_err(|_| format!("無法將「{}」轉換為數字", s)),
+                    Value::Boolean(b) => Ok(Value::Number(if *b { 1.0 } else { 0.0 })),
+                    _ => Err("無法轉換為數字".to_string()),
+                }
+            }),
+        );
+
+        env.define(
+            "類型".to_string(),
+            Value::NativeFunction(|args| {
+                if args.len() != 1 {
+                    return Err("期望一個參數".to_string());
+                }
+                Ok(Value::String(args[0].type_name().to_string()))
+            }),
+        );
+    }
+
+    /// 添加随机数函数
+    fn add_random_functions(env: &mut Environment) {
+        env.define(
+            "隨機".to_string(),
+            Value::NativeFunction(|args| {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let seed = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .subsec_nanos();
+
+                if args.is_empty() {
+                    // 返回 0 到 1 之间的随机浮点数
+                    let val = (seed as f64 % 10000.0) / 10000.0;
+                    Ok(Value::Number(val))
+                } else if args.len() == 2 {
+                    match (&args[0], &args[1]) {
+                        (Value::Integer(min), Value::Integer(max)) => {
+                            if min >= max {
+                                return Err("最小值必須小於最大值".to_string());
+                            }
+                            let range = (max - min) as u32;
+                            let val = *min + (seed % range) as i64;
+                            Ok(Value::Integer(val))
+                        }
+                        _ => Err("參數必須是整數".to_string()),
+                    }
+                } else {
+                    Err("期望零個或兩個參數".to_string())
+                }
             }),
         );
     }

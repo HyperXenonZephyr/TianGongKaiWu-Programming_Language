@@ -79,6 +79,15 @@ impl Environment {
     pub fn define(&mut self, name: String, value: Value) {
         self.variables.insert(name, value);
     }
+
+    /// 列出所有用户定义的变量（排除原生函数）
+    pub fn list_variables(&self) -> Vec<(String, String)> {
+        self.variables
+            .iter()
+            .filter(|(_, v)| !matches!(v, Value::NativeFunction(_)))
+            .map(|(k, v)| (k.clone(), v.to_string()))
+            .collect()
+    }
 }
 
 impl Value {

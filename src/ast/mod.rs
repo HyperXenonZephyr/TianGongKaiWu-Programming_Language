@@ -21,6 +21,7 @@ pub enum Statement {
     FunctionDecl(FunctionDecl),
     TryCatch(TryCatch),
     PrintStatement(PrintStatement),
+    ForEachStatement(ForEachStatement),
     ImportStatement(ImportStatement),
     ExportStatement(ExportStatement),
 }
@@ -71,6 +72,14 @@ pub struct LoopStatement {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhileStatement {
     pub condition: Expression,
+    pub body: Vec<Statement>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForEachStatement {
+    pub variable: String,
+    pub iterable: Expression,
     pub body: Vec<Statement>,
     pub span: Span,
 }
@@ -325,6 +334,7 @@ impl Statement {
             Statement::FunctionDecl(decl) => decl.span,
             Statement::TryCatch(stmt) => stmt.span,
             Statement::PrintStatement(stmt) => stmt.span,
+            Statement::ForEachStatement(stmt) => stmt.span,
             Statement::ImportStatement(stmt) => stmt.span,
             Statement::ExportStatement(stmt) => stmt.span,
         }
